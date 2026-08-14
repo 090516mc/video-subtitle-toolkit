@@ -16,9 +16,8 @@ import sys
 import os
 import argparse
 import json
-import shutil
 
-# ── 自动查找 ffmpeg ──────────────────────────────────
+
 def find_ffmpeg():
     try:
         import imageio_ffmpeg
@@ -36,11 +35,10 @@ def ensure_ffmpeg_in_path():
         pass
 
 
-# ── 步骤 1：提取音频 ─────────────────────────────────
 def extract_audio(video_path):
     audio_path = os.path.splitext(video_path)[0] + "_audio.wav"
     ffmpeg = find_ffmpeg()
-    print(f"[1/5] 提取音频 → {audio_path}")
+    print(f"[1/5] 提取音频 -> {audio_path}")
     subprocess.run([
         ffmpeg, "-i", video_path, "-vn",
         "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
@@ -49,7 +47,6 @@ def extract_audio(video_path):
     return audio_path
 
 
-# ── 步骤 2：语音识别 ─────────────────────────────────
 def transcribe(audio_path, model_size, language):
     import whisper
     json_path = os.path.splitext(audio_path)[0] + "_transcription.json"
@@ -71,7 +68,6 @@ def transcribe(audio_path, model_size, language):
     return json_path
 
 
-# ── 步骤 3：翻译 + 生成 SRT ──────────────────────────
 def format_timestamp(seconds):
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
@@ -83,7 +79,7 @@ def format_timestamp(seconds):
 def translate_and_srt(json_path, source, target):
     from deep_translator import GoogleTranslator
     srt_path = os.path.splitext(json_path)[0] + f"_{target}.srt"
-    print(f"[3/5] 翻译 {source} → {target}")
+    print(f"[3/5] 翻译 {source} -> {target}")
 
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -116,12 +112,11 @@ def translate_and_srt(json_path, source, target):
     return srt_path
 
 
-# ── 步骤 4：嵌入软字幕 ───────────────────────────────
 def embed_softsub(video_path, srt_path):
     ffmpeg = find_ffmpeg()
     base, ext = os.path.splitext(video_path)
     out = base + "_softsub" + ext
-    print(f"[4/5] 嵌入软字幕 → {out}")
+    print(f"[4/5] 嵌入软字幕 -> {out}")
 
     subprocess.run([
         ffmpeg, "-i", video_path, "-i", srt_path,
@@ -133,13 +128,12 @@ def embed_softsub(video_path, srt_path):
     return out
 
 
-# ── 步骤 5：烧录硬字幕 ───────────────────────────────
 def burn_hardsub(video_path, srt_path, crf=20):
     ffmpeg = find_ffmpeg()
     base, ext = os.path.splitext(video_path)
     out = base + "_hardsub" + ext
     srt_fixed = srt_path.replace("\\", "/").replace(":", "\\:")
-    print(f"[5/5] 烧录硬字幕 → {out} (CRF={crf})")
+    print(f"[5/5] 烧录硬字幕 -> {out} (CRF={crf})")
 
     subprocess.run([
         ffmpeg, "-i", video_path,
@@ -151,38 +145,28 @@ def burn_hardsub(video_path, srt_path, crf=20):
     return out
 
 
-# ── 清理临时文件 ─────────────────────────────────────
-def cleanup(video_path, keep_audio=False):
+def cleanup(video_path):
     base = os.path.splitext(video_path)[0]
-    files = [
+    for f in [
         base + "_audio.wav",
         base + "_audio_transcription.json",
         base + "_audio_transcription_zh-CN.srt",
-    ]
-    for f in files:
+    ]:
         if os.path.exists(f):
-            if keep_audio and f.endswith(".wav"):
-                continue
             os.remove(f)
 
 
-# ── 主流程 ───────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="视频字幕一键处理工具")
     parser.add_argument("video", help="视频文件路径")
     parser.add_argument("--model", default="small",
                         choices=["tiny", "small", "medium", "large"],
                         help="Whisper 模型大小 (默认 small)")
-    parser.add_argument("--lang", default="en",
-                        help="视频语言 (默认 en)")
-    parser.add_argument("--target", default="zh-CN",
-                        help="字幕目标语言 (默认 zh-CN)")
-    parser.add_argument("--hardsub", action="store_true",
-                        help="烧录硬字幕 (默认只做软字幕)")
-    parser.add_argument("--crf", type=int, default=20,
-                        help="硬字幕质量 18-23 (默认 20)")
-    parser.add_argument("--keep", action="store_true",
-                        help="保留临时文件")
+    parser.add_argument("--lang", default="en", help="视频语言 (默认 en)")
+    parser.add_argument("--target", default="zh-CN", help="字幕目标语言 (默认 zh-CN)")
+    parser.add_argument("--hardsub", action="store_true", help="烧录硬字幕")
+    parser.add_argument("--crf", type=int, default=20, help="硬字幕质量 18-23 (默认 20)")
+    parser.add_argument("--keep", action="store_true", help="保留临时文件")
 
     args = parser.parse_args()
     video = args.video
@@ -194,29 +178,22 @@ def main():
     ensure_ffmpeg_in_path()
 
     print(f"视频: {video}")
-    print(f"语言: {args.lang} → {args.target}")
+    print(f"语言: {args.lang} -> {args.target}")
     print(f"模型: {args.model}")
     print(f"模式: {'硬字幕' if args.hardsub else '软字幕'}")
     print("-" * 50)
 
-    # 1. 提取音频
     audio = extract_audio(video)
-
-    # 2. 语音识别
     json_path = transcribe(audio, args.model, args.lang)
-
-    # 3. 翻译 + 生成 SRT
     srt = translate_and_srt(json_path, args.lang, args.target)
 
-    # 4. 嵌入字幕
     if args.hardsub:
         output = burn_hardsub(video, srt, args.crf)
     else:
         output = embed_softsub(video, srt)
 
-    # 清理
     if not args.keep:
-        cleanup(video, keep_audio=False)
+        cleanup(video)
         print("  已清理临时文件")
 
     print("-" * 50)
